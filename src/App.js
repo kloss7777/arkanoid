@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Paletka from './components/paletka/paletka';
 import Pilka from './components/pilka/pilka';
 import Cegly from './components/cegly/cegly';
@@ -6,25 +6,25 @@ import collisionDetect from './util/collisionDetect';
 import calculateCollisionArea from './util/calculateCollisionArea';
 import Logo from './components/logo/logo';
 import Bonuses from "./components/bonuses/bonuses";
-import BounceBall from "../src/assets/sounds/ball-racquet-bounce.mp3";
-import BounceBallPaddle from "../src/assets/sounds/ping-pong-paddle.mp3";
-import GotItem from "../src/assets/sounds/got-item.mp3";
 
-class App extends Component {
-    state = {
-        count: 5,
-        lives: 3,
-    };
+import mp3BounceBall from "../src/assets/sounds/ball-racquet-bounce.mp3";
+import mp3BuonceBallPaddle from "../src/assets/sounds/ping-pong-paddle.mp3";
+import mp3GotItem from "../src/assets/sounds/got-item.mp3";
 
-    ball_sound;
+const playerBounceWall = new Audio(mp3BounceBall);
+const playerBouncePaddle = new Audio(mp3BuonceBallPaddle);
+const playerGotItem = new Audio(mp3GotItem);
 
-    pressedKeys = [];
-    pressedTime = {
+const App = () => {
+    const [gameState, setGameState] = useState();
+
+    const pressedKeys = useRef([]);
+    const pressedTime = useRef({
         'ArrowRight': 0,
         'ArrowLeft': 0,
-    };
+    });
 
-    componentWillMount() {
+    useEffect(() => {
         const width = window.innerWidth;
         const height = window.innerHeight;
 
@@ -58,7 +58,7 @@ class App extends Component {
         };
 
         const level = 3;
-        const cegly = this.generujCegly(10,20,width,height,level).slice();
+        const cegly = generujCegly(10,20,width,height,level).slice();
         const collisionArea = calculateCollisionArea(cegly,pilka);
 
         // bonusy wypadają z klocków rozbitych
@@ -66,7 +66,7 @@ class App extends Component {
 
         const gamePoints = 0;
 
-        this.setState({
+        setGameState({
             width: width,
             height: height,
             paletka: paletka,
@@ -75,21 +75,62 @@ class App extends Component {
             cegly: cegly,
             collisionArea: collisionArea,
             bonuses: bonuses,
-            gamePoints: gamePoints
+            gamePoints: gamePoints,
+            count: 5,
+            lives: 3,
         });
-    }
 
-    genColor = idx => {
-        const red = idx*(255/this.state.count);
+        const onKeyUp = (event) => {
+            pressedKeys.current = pressedKeys.current.filter(code => code !== event.code);
+            if (event.code === 'ArrowLeft' || event.code === 'ArrowRight' ) {
+                pressedTime.current[event.code] = 0;
+            }
+        };
+
+        const onKeyPress = (event) => {
+            switch (event.code) {
+                case 'ArrowRight':
+                case 'ArrowLeft':
+                case 'Space':
+                {
+                    if(pressedKeys.current.indexOf(event.code) === -1) {
+                        pressedKeys.current.push(event.code);
+                    }
+                    break;
+                }
+                default: break;
+            }
+        };
+
+        const onClockTick = () => {
+            setGameState(state => newState(state));
+        };
+
+
+        window.addEventListener("keydown", onKeyPress);
+        window.addEventListener("keyup", onKeyUp);
+        const onClockInterval = setInterval(onClockTick, 16);
+
+        return () => {
+            window.removeEventListener("keydown", onKeyPress);
+            window.removeEventListener("keyup", onKeyUp);
+            clearInterval(onClockInterval);
+        }
+
+    }, []);
+
+    const genColor = idx => {
+        const cnt = (gameState && gameState.count) ? gameState.count : 5;
+        const red = idx*(255/cnt);
         const green = 0;
-        const blue = 255-idx*(255/this.state.count);
+        const blue = 255-idx*(255/cnt);
         return "rgb("+[red,green,blue].join(',')+')';
     };
 
-    genCeglaKey = (row,col) => ""+row+"-"+col;
+    const genCeglaKey = (row,col) => ""+row+"-"+col;
 
     //
-    levelBrickGen = (level,row,col) => {
+    const levelBrickGen = (level,row,col) => {
         if (level === 1) {
             if (Math.random() >= 0.5) return 0;
             return Math.ceil(Math.random()*3)
@@ -104,58 +145,12 @@ class App extends Component {
         }
     };
 
-    generujCegly = (rows,cols,screen_width,screen_height,level) => {
-        let cegly = [];
-        const cegla_width = (screen_width*0.8)/cols;
-        const cegla_height = cegla_width*0.34;
-        const start_x = (screen_width-screen_width*0.8)/2;
-        const start_y = 200;
-        for (let row=0; row<rows; row++) {
-            for(let col=0; col<cols; col++) {
-                const hitpoints = this.levelBrickGen(level,row,col);
-                if (!hitpoints) continue;
-                const cegla = {
-                    key: this.genCeglaKey(col,row),
-                    x: start_x+col*cegla_width,
-                    y: start_y+row*cegla_height,
-                    width: cegla_width,
-                    height: cegla_height,
-                    // FIXME! ilość punktów ze stanu; i kolor początkowy też z tego stanu
-                    hit_points: hitpoints,
-                    color: this.genColor(hitpoints)
-                };
-                cegly = cegly.concat(cegla);
-            }
-        }
-        return cegly;
-    };
+    const pressTimeToSpeed = pressTime => pressTime;
+//    const degToRad = angle => angle * Math.PI / 180.0;
 
-    render() {
-        return (
-            <svg width={this.state.width} height={this.state.height}>
-                <rect width={this.state.width} height={this.state.height} style={{fill: '#cccccc'}} />
-                <Logo />
-                <text x="20" y="20" fontFamily="sans-serif" fontSize="20px" fill="black">Points: {this.state.gamePoints}</text>
-                <Paletka {...this.state.paletka} />
-                <Pilka {...this.state.pilka} />
-                <Cegly cegly={this.state.cegly.slice()}/>
-                <Bonuses bonuses={this.state.bonuses.slice()}/>
-            </svg>
-        );
-    }
-    /*           */
+//    const MAX_BOUNCE_ANGLE = 60;
 
-
-    pressTimeToSpeed = pressTime => pressTime;
-    degToRad = angle => angle * Math.PI / 180.0;
-
-    MAX_BOUNCE_ANGLE = 60;
-
-    playerBounceBall = new Audio(BounceBall);
-    playerBounceBallPaddle = new Audio(BounceBallPaddle);
-    playerGotItem = new Audio(GotItem);
-
-    newState = state => {
+    const newState = state => {
         let paletka = { ...state.paletka };
         let pilka =  {...state.pilka};
         let cegly = state.cegly.slice();
@@ -165,21 +160,21 @@ class App extends Component {
         let gamePoints = state.gamePoints;
 
         // obsługa przesunięcia paletki gdy wciśnięty jest klawisz na klawiaturze
-        if (this.pressedKeys.indexOf('ArrowRight')>=0) {
-            this.pressedTime['ArrowRight']++;
-            paletka.x = paletka.x+paletka.delta+this.pressTimeToSpeed(this.pressedTime['ArrowRight']);
+        if (pressedKeys.current.indexOf('ArrowRight')>=0) {
+            pressedTime.current['ArrowRight']++;
+            paletka.x = paletka.x+paletka.delta+pressTimeToSpeed(pressedTime.current['ArrowRight']);
             if ( (paletka.x+paletka.width) > state.boundary.right ) {
                 paletka.x = state.boundary.right-paletka.width;
             }
         }
-        if (this.pressedKeys.indexOf('ArrowLeft')>=0) {
-            this.pressedTime['ArrowLeft']++;
-            paletka.x = paletka.x-paletka.delta-this.pressTimeToSpeed(this.pressedTime['ArrowLeft']);
+        if (pressedKeys.current.indexOf('ArrowLeft')>=0) {
+            pressedTime.current['ArrowLeft']++;
+            paletka.x = paletka.x-paletka.delta-pressTimeToSpeed(pressedTime.current['ArrowLeft']);
             if (paletka.x<state.boundary.left) {
-                paletka.x = this.state.boundary.left;
+                paletka.x = state.boundary.left;
             }
         }
-        if (this.pressedKeys.indexOf('Space')>=0) {
+        if (pressedKeys.current.indexOf('Space')>=0) {
             if (pilka.dx === 0 && pilka.dy === 0) {
 
                 //let angle = ((Math.random()*90)-45)*2;
@@ -200,7 +195,7 @@ class App extends Component {
         // animacja bonusów
         const newBonuses = [];
         if (bonuses.length) {
-            for (var bonus in bonuses) {
+            for (let bonus in bonuses) {
                 // bonus.key - key kolejnego bonusa
                 // bonus.x - pozcja w poziomie (niezmienna)
                 // bonus.y - pozycja w ponionie (rośnie)
@@ -214,9 +209,7 @@ class App extends Component {
                 if (newBonus.y>paletka.y) {
                     if ((newBonus.x>=paletka.x) && (newBonus.x+newBonus.width < paletka.x+paletka.width)) {
                         console.log('bonus type: ',newBonus.type);
-                        this.playerGotItem.pause();
-                        this.playerGotItem.currentTime = 0;
-                        this.playerGotItem.play();
+                        playerGotItem.play();
 
                         if (newBonus.type === 1) {
                             paletka.width += 20;
@@ -256,27 +249,31 @@ class App extends Component {
             // kolizje ze ścianami
             if (pilka.x+pilka.radius>state.boundary.right || pilka.x-pilka.radius<state.boundary.left) {
                 pilka.dx = -pilka.dx;
-                this.playerBounceBall.play();
+                playerBounceWall.play();
             }
             if (pilka.y<state.boundary.top) {
                 pilka.dy = -pilka.dy;
-                this.playerBounceBall.play();
+                playerBounceWall.play();
             }
+
+
             if (pilka.y>state.boundary.bottom) {
                 // pilka wraca na paletkę:
                 pilka.dx = 0;
                 pilka.dy = 0;
             }
+
+
             // odbicie piłki od paletki
             if (pilka.y+pilka.radius>paletka.y && pilka.x>paletka.x && pilka.x<paletka.x+paletka.width) {
                 const speedXY = Math.sqrt(pilka.dx*pilka.dx + pilka.dy*pilka.dy);
                 const paddleCenterX = paletka.x + paletka.width/2;
                 const posX = -(pilka.x - paddleCenterX)/(paletka.width/2);
 
-                console.log(posX);
+//                console.log(posX);
                 const influenceX = 0.70;
                 const speedX = speedXY * posX * influenceX;
-                const speedUPonHit = 1.01; // +1%
+                const speedUPonHit = 1.03; // +3%
                 pilka.dx = speedX*speedUPonHit;
 
                 const speedY = Math.sqrt(speedXY*speedXY - speedX*speedX) * (pilka.dy > 0? -1 : 1);
@@ -286,16 +283,16 @@ class App extends Component {
 //        pilka.dx = Math.sign(pilka.dx)*(pilka.base_speed+Math.abs(miejsce));
 //         pilka.dy = -pilka.base_speed;
                 pilka.y = paletka.y-pilka.radius;
-                this.playerBounceBallPaddle.play();
+                playerBouncePaddle.play();
             }
 
             if (state.collisionArea) {
                 let { minX, maxX, minY, maxY } = {...state.collisionArea};
                 if (pilka.x>minX && pilka.x<maxX && pilka.y>minY && pilka.y<maxY) {
                     // kolizje z cegłami
-                    var cegla_uderzona;
-                    var dir;
-                    for (var i in cegly) {
+                    let cegla_uderzona;
+                    let dir;
+                    for (let i in cegly) {
                         var cegla = cegly[i];
                         dir = collisionDetect(pilka,cegla);
                         if (dir === "") continue;
@@ -305,7 +302,7 @@ class App extends Component {
                     }
 
                     if (cegla_uderzona) {
-                        this.playerBounceBall.play();
+                        playerBounceWall.play();
                         if (dir === "bottom") {
                             pilka.dy = -pilka.dy;
                         }
@@ -319,7 +316,7 @@ class App extends Component {
                             pilka.dy = -pilka.dy;
                         }
                         cegla_uderzona.hit_points = cegla_uderzona.hit_points-1;
-                        cegla_uderzona.color = this.genColor(cegla_uderzona.hit_points);
+                        cegla_uderzona.color = genColor(cegla_uderzona.hit_points);
                         if (cegla_uderzona.hit_points === 0) {
                             cegly = cegly.filter(cegla => cegla.key !== cegla_uderzona.key);
                             newBonuses.push({
@@ -360,38 +357,45 @@ class App extends Component {
 
     };
 
-    onClock = () => {
-        this.setState(state => this.newState(state));
-    };
-
-    onKeyUp = (event) => {
-        this.pressedKeys = this.pressedKeys.filter(code => code !== event.code);
-        if (event.code === 'ArrowLeft' || event.code === 'ArrowRight' ) {
-            this.pressedTime[event.code] = 0;
-        }
-    };
-
-    onKeyPress = (event) => {
-        switch (event.code) {
-            case 'ArrowRight':
-            case 'ArrowLeft':
-            case 'Space':
-            {
-                if(this.pressedKeys.indexOf(event.code) === -1) {
-                    this.pressedKeys.push(event.code);
-                }
-                break;
+    const generujCegly = (rows,cols,screen_width,screen_height,level) => {
+        let cegly = [];
+        const cegla_width = (screen_width*0.8)/cols;
+        const cegla_height = cegla_width*0.34;
+        const start_x = (screen_width-screen_width*0.8)/2;
+        const start_y = 200;
+        for (let row=0; row<rows; row++) {
+            for(let col=0; col<cols; col++) {
+                const hitpoints = levelBrickGen(level,row,col);
+                if (!hitpoints) continue;
+                const cegla = {
+                    key: genCeglaKey(col,row),
+                    x: start_x+col*cegla_width,
+                    y: start_y+row*cegla_height,
+                    width: cegla_width,
+                    height: cegla_height,
+                    // FIXME! ilość punktów ze stanu; i kolor początkowy też z tego stanu
+                    hit_points: hitpoints,
+                    color: genColor(hitpoints)
+                };
+                cegly = cegly.concat(cegla);
             }
-            default: break;
         }
+        return cegly;
     };
 
-    componentDidMount() {
-        //document.addEventListener("keydown", this.onKeyPress.bind(this));
-        document.addEventListener("keydown", this.onKeyPress.bind(this));
-        document.addEventListener("keyup", this.onKeyUp.bind(this));
-        setInterval(this.onClock, 16);
-    }
+    if (!gameState) return null;
+    return (
+        <svg width={gameState.width} height={gameState.height}>
+            <rect width={gameState.width} height={gameState.height} style={{fill: '#cccccc'}} />
+            <Logo />
+            <text x="20" y="20" fontFamily="sans-serif" fontSize="20px" fill="black">Points: {gameState.gamePoints}</text>
+            <Paletka {...gameState.paletka} />
+            <Pilka {...gameState.pilka} />
+            <Cegly cegly={gameState.cegly.slice()}/>
+            <Bonuses bonuses={gameState.bonuses.slice()}/>
+        </svg>
+    );
 }
 
 export default App;
+
